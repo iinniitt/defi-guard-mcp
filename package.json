@@ -1,0 +1,28 @@
+{
+  "name": "defi-guard-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for real-time DeFi risk on Base: Aave V3 position health, gas-aware DEX quotes, and token liquidity risk snapshots.",
+  "type": "module",
+  "bin": { "defi-guard-mcp": "dist/index.js" },
+  "main": "dist/index.js",
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "smoke": "node test/smoke.mjs"
+  },
+  "keywords": ["mcp", "modelcontextprotocol", "defi", "base", "aave", "uniswap", "risk", "crypto"],
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/iinniitt/defi-guard-mcp.git" },
+  "homepage": "https://github.com/iinniitt/defi-guard-mcp#readme",
+  "bugs": { "url": "https://github.com/iinniitt/defi-guard-mcp/issues" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "viem": "^2.21.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0"
+  }
+}
