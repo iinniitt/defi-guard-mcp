@@ -1,5 +1,5 @@
 {
-  "name": "defi-guard-mcp",
+  "name": "@iniit/defi-guard-mcp",
   "version": "0.1.0",
   "description": "MCP server for real-time DeFi risk on Base: Aave V3 position health, gas-aware DEX quotes, and token liquidity risk snapshots.",
   "type": "module",

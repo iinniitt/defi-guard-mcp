@@ -19,13 +19,13 @@ TVL and pool-size numbers are easy to fake and easy to misread. A round-trip quo
 ## Install
 
 ```bash
-npm install && npm run build
+npx @iniit/defi-guard-mcp        # or from source: npm install && npm run build
 ```
 
 ### Claude Code
 
 ```bash
-claude mcp add defi-guard -- node <path-to>/defi-guard-mcp/dist/index.js
+claude mcp add defi-guard -- npx -y @iniit/defi-guard-mcp
 ```
 
 ### Any MCP client (Cursor, Windsurf, etc.)
@@ -34,8 +34,8 @@ claude mcp add defi-guard -- node <path-to>/defi-guard-mcp/dist/index.js
 {
   "mcpServers": {
     "defi-guard": {
-      "command": "node",
-      "args": ["<path-to>/defi-guard-mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "@iniit/defi-guard-mcp"],
       "env": { "BASE_RPC_URL": "https://your-rpc-if-you-have-one" }
     }
   }
