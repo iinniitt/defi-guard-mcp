@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
   "name": "io.github.iinniitt/defi-guard-mcp",
-  "description": "Real-time DeFi risk on Base: Aave V3 position health, executable swap quotes, token liquidity risk via live round-trip quotes.",
+  "description": "Real-time DeFi risk on Base: Aave V3 health, executable swap quotes, token exit-liquidity checks.",
   "repository": {
     "url": "https://github.com/iinniitt/defi-guard-mcp",
     "source": "github"
@@ -9,15 +9,15 @@
   "version": "0.1.1",
   "packages": [
     {
-      "registry_type": "npm",
+      "registryType": "npm",
       "identifier": "@iniit/defi-guard-mcp",
       "version": "0.1.1",
       "transport": { "type": "stdio" },
-      "environment_variables": [
+      "environmentVariables": [
         {
           "name": "BASE_RPC_URL",
           "description": "Optional Base RPC endpoint; defaults to public fallback pool",
-          "is_required": false
+          "isRequired": false
         }
       ]
     }
