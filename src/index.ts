@@ -143,7 +143,8 @@ function assertAddress(value: string, label: string): Address {
   return value as Address;
 }
 
-const server = new McpServer({ name: "defi-guard-mcp", version: "0.1.0" });
+const VERSION = "0.1.1";
+const server = new McpServer({ name: "defi-guard-mcp", version: VERSION });
 
 server.tool(
   "aave_position_health",
@@ -270,4 +271,4 @@ server.tool(
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
-console.error(`defi-guard-mcp v0.1.0 ready (rpc: ${RPC_URL ?? "public fallback pool"})`);
+console.error(`defi-guard-mcp v${VERSION} ready (rpc: ${RPC_URL ?? "public fallback pool"})`);

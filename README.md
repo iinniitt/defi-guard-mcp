@@ -1,5 +1,7 @@
 # DeFi Guard MCP
 
+<!-- mcp-name: io.github.iinniitt/defi-guard-mcp -->
+
 Real-time DeFi risk tools for AI agents, on **Base L2**. Give your agent eyes on live on-chain state before it (or you) touch DeFi: position health, executable swap prices, and honest token liquidity checks.
 
 No API keys required — works out of the box against public Base RPCs (bring your own RPC for speed via `BASE_RPC_URL`).
