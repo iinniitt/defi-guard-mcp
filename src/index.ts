@@ -143,7 +143,7 @@ function assertAddress(value: string, label: string): Address {
   return value as Address;
 }
 
-const VERSION = "0.1.1";
+const VERSION = "0.1.2";
 const server = new McpServer({ name: "defi-guard-mcp", version: VERSION });
 
 server.tool(
