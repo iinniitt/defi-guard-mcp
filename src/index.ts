@@ -208,7 +208,18 @@ function assertAddress(value: string, label: string): Address {
   return value as Address;
 }
 
-const VERSION = "0.1.2";
+// Single source of truth: read the version from package.json so releases can't drift.
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+const VERSION: string = (() => {
+  try {
+    const pkgPath = join(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
+    return JSON.parse(readFileSync(pkgPath, "utf8")).version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+})();
 const server = new McpServer({ name: "defi-guard-mcp", version: VERSION });
 
 server.tool(
