@@ -1,0 +1,23 @@
+# Smithery listing config for defi-guard-mcp (published stdio server on npm).
+# Smithery launches the published package via npx; users optionally supply their own Base RPC.
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      baseRpcUrl:
+        type: string
+        title: Base RPC URL
+        description: >-
+          Optional Base L2 RPC endpoint. Leave empty to use the public fallback
+          pool (rate-limited on bursts). A paid endpoint is faster and unthrottled.
+    required: []
+    additionalProperties: false
+  commandFunction: |-
+    (config) => ({
+      "command": "npx",
+      "args": ["-y", "@iniit/defi-guard-mcp"],
+      "env": config.baseRpcUrl ? { "BASE_RPC_URL": config.baseRpcUrl } : {}
+    })
+  exampleConfig:
+    baseRpcUrl: ""

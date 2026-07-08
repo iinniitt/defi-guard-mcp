@@ -2,6 +2,10 @@
 
 <!-- mcp-name: io.github.iinniitt/defi-guard-mcp -->
 
+[![npm](https://img.shields.io/npm/v/@iniit/defi-guard-mcp)](https://www.npmjs.com/package/@iniit/defi-guard-mcp)
+[![smithery badge](https://smithery.ai/badge/@iinniitt/defi-guard-mcp)](https://smithery.ai/server/@iinniitt/defi-guard-mcp)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 The **safety layer that checks a DeFi transaction or token before your agent (or you) signs** — on **Base L2**. Sits in front of execution MCPs (it pairs with them, it doesn't compete): honeypot detection, owner-power scans, approval-drain checks, position health, and executable prices — all from live on-chain state.
 
 No API keys required — works out of the box against public Base RPCs (bring your own RPC for speed via `BASE_RPC_URL`). Read-only: it never holds keys, signs, or submits.
