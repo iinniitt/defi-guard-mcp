@@ -20,6 +20,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { createPublicClient, http, fallback, formatUnits, parseUnits, isAddress, toFunctionSelector, type Address } from "viem";
 import { base } from "viem/chains";
+import { meterUse } from "./metering.js";
 
 // User-supplied RPC first (paid endpoints are faster and unthrottled);
 // otherwise rotate across public endpoints, which rate-limit bursts.
@@ -413,6 +414,8 @@ server.tool(
   "Scan a token/contract's DEPLOYED BYTECODE on Base for owner-only powers that can harm holders — mint, pause, blacklist, adjustable fees/taxes, max-tx limits, trading toggles, and proxy upgradeability. Flags the PRESENCE of each capability (a selector match in the code), i.e. what the operator COULD do, independent of the token's claims. No explorer API key needed. Heuristic: matches 4-byte selectors in runtime bytecode; a minimal proxy hides its real logic in the implementation (reported).",
   { token: z.string().describe("Contract/token address on Base") },
   async ({ token }) => {
+    const gate = meterUse("scan_dangerous_capabilities");
+    if (!gate.allowed) return { content: [{ type: "text", text: JSON.stringify({ error: "rate_limited", detail: gate.message }) }] };
     const t = assertAddress(token, "token");
     const code = await withRetry(() => client.getCode({ address: t }));
     if (!code || code === "0x") {
@@ -459,6 +462,8 @@ server.tool(
     spender: z.string().describe("The address allowed to spend (router, contract, or EOA)"),
   },
   async ({ owner, token, spender }) => {
+    const gate = meterUse("approval_risk");
+    if (!gate.allowed) return { content: [{ type: "text", text: JSON.stringify({ error: "rate_limited", detail: gate.message }) }] };
     const o = assertAddress(owner, "owner");
     const t = assertAddress(token, "token");
     const s = assertAddress(spender, "spender");
