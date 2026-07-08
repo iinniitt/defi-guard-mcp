@@ -1,11 +1,16 @@
 #!/usr/bin/env node
 /**
- * DeFi Guard MCP — real-time DeFi risk tools on Base L2.
+ * DeFi Guard MCP — real-time DeFi safety + risk tools on Base L2.
  *
- * Tools:
- *  - aave_position_health : Aave V3 position health (health factor, collateral, debt, LTV)
- *  - quote_swap           : exact-input swap quote via Uniswap V3 QuoterV2 (best fee tier)
- *  - token_risk_snapshot  : ERC-20 metadata + real liquidity depth via round-trip quotes
+ * Data tools:
+ *  - aave_position_health       : Aave V3 position health (health factor, collateral, debt, LTV)
+ *  - quote_swap                 : exact-input swap quote via Uniswap V3 QuoterV2 (best fee tier)
+ *  - token_risk_snapshot        : ERC-20 metadata + real liquidity depth via round-trip quotes
+ *
+ * Guard-before-signing tools (pre-trade safety, no explorer API key needed):
+ *  - token_safety_screen        : honeypot (can you sell?) + round-trip cost + ownership renounced
+ *  - scan_dangerous_capabilities: owner powers in bytecode (mint/pause/blacklist/fees/upgrade)
+ *  - approval_risk              : live allowance + unlimited-approval / allowance-drain flagging
  *
  * All reads are on-chain via a Base RPC (BASE_RPC_URL env, defaults to the public endpoint).
  * Addresses were validated against live Base state in a prior audited engine.
@@ -13,7 +18,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { createPublicClient, http, fallback, formatUnits, parseUnits, isAddress, type Address } from "viem";
+import { createPublicClient, http, fallback, formatUnits, parseUnits, isAddress, toFunctionSelector, type Address } from "viem";
 import { base } from "viem/chains";
 
 // User-supplied RPC first (paid endpoints are faster and unthrottled);
@@ -87,7 +92,66 @@ const erc20Abi = [
   { name: "symbol", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
   { name: "decimals", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "uint8" }] },
   { name: "totalSupply", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  {
+    name: "allowance",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    name: "balanceOf",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ type: "uint256" }],
+  },
 ] as const;
+
+const UINT256_MAX = (1n << 256n) - 1n;
+
+// Owner-only powers that let a token operator harm holders. We flag their PRESENCE in the deployed
+// bytecode (a PUSH4 selector match) — it means the capability exists, not that it will be used.
+const DANGEROUS_FUNCS: { sig: string; label: string; severity: "critical" | "high" | "medium" }[] = [
+  { sig: "function mint(address,uint256)", label: "mint(address,uint256)", severity: "high" },
+  { sig: "function mint(uint256)", label: "mint(uint256)", severity: "high" },
+  { sig: "function pause()", label: "pause()", severity: "high" },
+  { sig: "function blacklist(address)", label: "blacklist(address)", severity: "critical" },
+  { sig: "function setBlacklist(address,bool)", label: "setBlacklist(address,bool)", severity: "critical" },
+  { sig: "function addBlackList(address)", label: "addBlackList(address)", severity: "critical" },
+  { sig: "function setFee(uint256)", label: "setFee(uint256)", severity: "medium" },
+  { sig: "function setFees(uint256,uint256)", label: "setFees(uint256,uint256)", severity: "medium" },
+  { sig: "function setTax(uint256)", label: "setTax(uint256)", severity: "medium" },
+  { sig: "function setTaxes(uint256,uint256)", label: "setTaxes(uint256,uint256)", severity: "medium" },
+  { sig: "function setMaxTxAmount(uint256)", label: "setMaxTxAmount(uint256)", severity: "medium" },
+  { sig: "function setMaxWallet(uint256)", label: "setMaxWallet(uint256)", severity: "medium" },
+  { sig: "function enableTrading()", label: "enableTrading()", severity: "medium" },
+  { sig: "function setTradingEnabled(bool)", label: "setTradingEnabled(bool)", severity: "medium" },
+  { sig: "function upgradeTo(address)", label: "upgradeTo(address) [proxy]", severity: "high" },
+  { sig: "function upgradeToAndCall(address,bytes)", label: "upgradeToAndCall(address,bytes) [proxy]", severity: "high" },
+];
+
+const ownableAbi = [
+  { name: "owner", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { name: "getOwner", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+] as const;
+
+const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
+
+/** Best-effort owner read: try owner() then getOwner(). null = no standard owner fn (non-Ownable). */
+async function readOwner(token: Address): Promise<string | null> {
+  for (const fn of ["owner", "getOwner"] as const) {
+    try {
+      const o = await withRetry(() =>
+        client.readContract({ address: token, abi: ownableAbi, functionName: fn })
+      );
+      return o as string;
+    } catch {
+      // function absent or reverts — try the next
+    }
+  }
+  return null;
+}
 
 interface Quote {
   amountOut: bigint;
@@ -264,6 +328,182 @@ server.tool(
       depthProbe: { small, large },
       liquidityRisk: worstLoss >= 100 ? "UNTRADABLE" : worstLoss > 10 ? "high" : worstLoss > 3 ? "medium" : "low",
       note: "Depth measured with live round-trip quotes on Uniswap V3 (Base). Loss includes pool fees + price impact both ways.",
+    };
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  }
+);
+
+server.tool(
+  "token_safety_screen",
+  "Pre-trade safety screen for an ERC-20 on Base — the 'is this safe to buy/approve BEFORE I sign' check. Verifies you can actually SELL it back (honeypot detection), measures the real round-trip cost (buy+sell fees/tax), and reports whether ownership is renounced (a live owner can often change taxes, pause, or mint). Returns a single risk verdict. On-chain only; no oracle, no trust in the token's own claims.",
+  { token: z.string().describe("ERC-20 token address on Base") },
+  async ({ token }) => {
+    const t = assertAddress(token, "token");
+    const [symbol, decimals] = await Promise.all([
+      withRetry(() => client.readContract({ address: t, abi: erc20Abi, functionName: "symbol" })).catch(() => "?"),
+      withRetry(() => client.readContract({ address: t, abi: erc20Abi, functionName: "decimals" })).catch(() => 18),
+    ]);
+
+    // Honeypot / sell-tax probe: buy with 0.05 WETH, then try to sell the received tokens back.
+    const wethIn = parseUnits("0.05", 18);
+    const buy = await bestQuote(WETH, t, wethIn);
+    let sellable: boolean;
+    let roundTripLossPct: number | null = null;
+    let note: string;
+    if (!buy) {
+      sellable = false;
+      note = "No Uniswap V3 pool with liquidity found — not tradable on the venues checked.";
+    } else {
+      const sell = await bestQuote(t, WETH, buy.amountOut);
+      if (!sell) {
+        sellable = false;
+        note = "HONEYPOT SIGNAL: buyable but no executable sell route — you may not be able to exit.";
+      } else {
+        sellable = true;
+        roundTripLossPct = Number(((1 - Number(sell.amountOut) / Number(wethIn)) * 100).toFixed(3));
+        note = "Round-trip loss = buy+sell pool fees + price impact + any transfer tax, both directions.";
+      }
+    }
+
+    const ownerRaw = await readOwner(t);
+    const ownershipRenounced = ownerRaw === null ? null : ownerRaw.toLowerCase() === ZERO_ADDR;
+
+    // Verdict: honeypot dominates; then live owner + high tax; then tax bands.
+    let verdict: string;
+    if (!buy) verdict = "UNTRADABLE";
+    else if (!sellable) verdict = "HONEYPOT";
+    else if (roundTripLossPct !== null && roundTripLossPct >= 50) verdict = "CRITICAL";
+    else if (ownershipRenounced === false && roundTripLossPct !== null && roundTripLossPct > 15)
+      verdict = "high";
+    else if (roundTripLossPct !== null && roundTripLossPct > 15) verdict = "elevated";
+    else if (roundTripLossPct !== null && roundTripLossPct > 5) verdict = "medium";
+    else verdict = "low";
+
+    const flags: string[] = [];
+    if (verdict === "HONEYPOT") flags.push("cannot_sell");
+    if (ownershipRenounced === false) flags.push("owner_not_renounced");
+    if (ownershipRenounced === null) flags.push("no_standard_owner_fn");
+    if (roundTripLossPct !== null && roundTripLossPct > 15) flags.push("high_round_trip_cost");
+
+    const result = {
+      network: "base",
+      token: t,
+      symbol,
+      decimals,
+      verdict,
+      sellable,
+      roundTripLossPct,
+      ownershipRenounced, // true = renounced (safer), false = live owner, null = non-standard
+      owner: ownerRaw,
+      flags,
+      note: `${note} Ownership: ${
+        ownershipRenounced === null
+          ? "no standard owner() — non-Ownable or custom access control (inspect further)"
+          : ownershipRenounced
+            ? "renounced (owner = 0x0)"
+            : "LIVE owner — can potentially change taxes/pause/mint depending on the contract"
+      }. This is a heuristic pre-trade screen, not a full audit.`,
+    };
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  }
+);
+
+server.tool(
+  "scan_dangerous_capabilities",
+  "Scan a token/contract's DEPLOYED BYTECODE on Base for owner-only powers that can harm holders — mint, pause, blacklist, adjustable fees/taxes, max-tx limits, trading toggles, and proxy upgradeability. Flags the PRESENCE of each capability (a selector match in the code), i.e. what the operator COULD do, independent of the token's claims. No explorer API key needed. Heuristic: matches 4-byte selectors in runtime bytecode; a minimal proxy hides its real logic in the implementation (reported).",
+  { token: z.string().describe("Contract/token address on Base") },
+  async ({ token }) => {
+    const t = assertAddress(token, "token");
+    const code = await withRetry(() => client.getCode({ address: t }));
+    if (!code || code === "0x") {
+      return {
+        content: [{ type: "text", text: JSON.stringify({ network: "base", address: t, isContract: false, note: "No bytecode at this address — it is an EOA (wallet), not a contract." }) }],
+      };
+    }
+    const hay = code.toLowerCase();
+    const found = DANGEROUS_FUNCS.filter((f) => hay.includes(toFunctionSelector(f.sig).slice(2).toLowerCase()))
+      .map((f) => ({ capability: f.label, severity: f.severity }));
+    const codeSizeBytes = (code.length - 2) / 2;
+    const likelyProxy = codeSizeBytes < 200;
+    const worst = found.some((f) => f.severity === "critical")
+      ? "critical"
+      : found.some((f) => f.severity === "high")
+        ? "high"
+        : found.some((f) => f.severity === "medium")
+          ? "medium"
+          : "low";
+    const result = {
+      network: "base",
+      address: t,
+      isContract: true,
+      codeSizeBytes,
+      likelyProxy,
+      dangerousCapabilities: found,
+      verdict: found.length === 0 ? "low" : worst,
+      note:
+        (likelyProxy
+          ? "This looks like a minimal proxy — the real logic (and its powers) live in the implementation contract, which this scan does NOT see. Resolve the implementation and re-scan. "
+          : "") +
+        "Presence of a capability means the operator CAN do it, not that they will. Blacklist/mint on a live (non-renounced) owner is the highest concern — pair this with token_safety_screen for ownership status. Selector-match heuristic; verify critical hits against source.",
+    };
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  }
+);
+
+server.tool(
+  "approval_risk",
+  "Assess the risk of an existing ERC-20 approval on Base BEFORE it can be abused: reads the live allowance an owner has granted a spender, flags UNLIMITED approvals (the allowance-drain vector — a compromised or malicious spender can pull up to the allowance), and reports whether the spender is a contract. Unlimited allowance to an EOA is a classic scam setup. Use before signing an approval, or to audit standing approvals.",
+  {
+    owner: z.string().describe("The wallet that granted the approval"),
+    token: z.string().describe("The ERC-20 token address"),
+    spender: z.string().describe("The address allowed to spend (router, contract, or EOA)"),
+  },
+  async ({ owner, token, spender }) => {
+    const o = assertAddress(owner, "owner");
+    const t = assertAddress(token, "token");
+    const s = assertAddress(spender, "spender");
+    const allowance = await withRetry(() =>
+      client.readContract({ address: t, abi: erc20Abi, functionName: "allowance", args: [o, s] })
+    );
+    const [decimals, balance, spenderCode] = await Promise.all([
+      withRetry(() => client.readContract({ address: t, abi: erc20Abi, functionName: "decimals" })).catch(() => 18),
+      withRetry(() => client.readContract({ address: t, abi: erc20Abi, functionName: "balanceOf", args: [o] })).catch(() => 0n),
+      withRetry(() => client.getCode({ address: s })).catch(() => undefined),
+    ]);
+    const unlimited = allowance >= UINT256_MAX / 2n;
+    const spenderIsContract = !!spenderCode && spenderCode !== "0x";
+    const exposure = allowance < balance ? allowance : balance; // what could actually be pulled now
+    const verdict =
+      allowance === 0n
+        ? "none"
+        : unlimited && !spenderIsContract
+          ? "CRITICAL"
+          : unlimited
+            ? "high"
+            : exposure > 0n
+              ? "medium"
+              : "low";
+    const flags: string[] = [];
+    if (unlimited) flags.push("unlimited_allowance");
+    if (!spenderIsContract && allowance > 0n) flags.push("spender_is_eoa");
+    if (exposure > 0n) flags.push("live_exposure");
+    const result = {
+      network: "base",
+      token: t,
+      owner: o,
+      spender: s,
+      allowanceRaw: allowance.toString(),
+      allowance: unlimited ? "unlimited (~2^256)" : formatUnits(allowance, decimals),
+      unlimited,
+      spenderIsContract,
+      currentExposure: formatUnits(exposure, decimals),
+      verdict,
+      flags,
+      note:
+        "Exposure = min(allowance, current balance): the max the spender could pull right now. " +
+        "Unlimited approvals persist after your swap — revoke when done. Spender contract-verification " +
+        "status needs an explorer API key (not checked here). This flags the allowance vector; it does not " +
+        "prove intent.",
     };
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   }

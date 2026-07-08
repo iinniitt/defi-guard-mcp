@@ -1,17 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
   "name": "io.github.iinniitt/defi-guard-mcp",
-  "description": "Real-time DeFi risk on Base: Aave V3 health, executable swap quotes, token exit-liquidity checks.",
+  "description": "DeFi safety checks on Base before you sign: honeypot, owner-power scan, approval risk, Aave health.",
   "repository": {
     "url": "https://github.com/iinniitt/defi-guard-mcp",
     "source": "github"
   },
-  "version": "0.1.2",
+  "version": "0.2.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@iniit/defi-guard-mcp",
-      "version": "0.1.2",
+      "version": "0.2.0",
       "transport": { "type": "stdio" },
       "environmentVariables": [
         {

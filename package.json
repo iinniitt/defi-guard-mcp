@@ -1,8 +1,8 @@
 {
   "name": "@iniit/defi-guard-mcp",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "mcpName": "io.github.iinniitt/defi-guard-mcp",
-  "description": "MCP server for real-time DeFi risk on Base: Aave V3 position health, gas-aware DEX quotes, and token liquidity risk snapshots.",
+  "description": "Safety layer that checks a DeFi token or transaction on Base before you sign: honeypot detection, owner-power (mint/pause/blacklist) bytecode scan, unlimited-approval risk, Aave V3 position health, and gas-aware DEX quotes.",
   "type": "module",
   "bin": { "defi-guard-mcp": "dist/index.js" },
   "main": "dist/index.js",
@@ -12,7 +12,7 @@
     "start": "node dist/index.js",
     "smoke": "node test/smoke.mjs"
   },
-  "keywords": ["mcp", "modelcontextprotocol", "defi", "base", "aave", "uniswap", "risk", "crypto"],
+  "keywords": ["mcp", "modelcontextprotocol", "defi", "base", "aave", "uniswap", "risk", "crypto", "security", "honeypot", "token-safety", "approval", "web3-security"],
   "license": "MIT",
   "repository": { "type": "git", "url": "git+https://github.com/iinniitt/defi-guard-mcp.git" },
   "homepage": "https://github.com/iinniitt/defi-guard-mcp#readme",

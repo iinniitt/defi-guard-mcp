@@ -2,11 +2,19 @@
 
 <!-- mcp-name: io.github.iinniitt/defi-guard-mcp -->
 
-Real-time DeFi risk tools for AI agents, on **Base L2**. Give your agent eyes on live on-chain state before it (or you) touch DeFi: position health, executable swap prices, and honest token liquidity checks.
+The **safety layer that checks a DeFi transaction or token before your agent (or you) signs** — on **Base L2**. Sits in front of execution MCPs (it pairs with them, it doesn't compete): honeypot detection, owner-power scans, approval-drain checks, position health, and executable prices — all from live on-chain state.
 
-No API keys required — works out of the box against public Base RPCs (bring your own RPC for speed via `BASE_RPC_URL`).
+No API keys required — works out of the box against public Base RPCs (bring your own RPC for speed via `BASE_RPC_URL`). Read-only: it never holds keys, signs, or submits.
 
-## Tools
+## Guard-before-signing tools
+
+| Tool | What it answers |
+|---|---|
+| `token_safety_screen` | "Is this token safe to buy/approve *before* I sign?" — **honeypot detection** (can you actually sell it back?), real round-trip cost (fees + tax both ways), and whether **ownership is renounced** (a live owner can often change taxes / pause / mint). One risk verdict. |
+| `scan_dangerous_capabilities` | "What can the owner do to me?" — scans the **deployed bytecode** for owner-only powers: `mint`, `pause`, `blacklist`, adjustable fees/taxes, max-tx limits, trading toggles, proxy `upgradeTo`. Flags the *capability*, no explorer key needed. |
+| `approval_risk` | "Is this approval dangerous?" — reads the live allowance an owner granted a spender, flags **unlimited approvals** (the allowance-drain vector) and whether the spender is a contract or an EOA. Current exposure = what could be pulled right now. |
+
+## Data tools
 
 | Tool | What it answers |
 |---|---|
@@ -48,9 +56,9 @@ claude mcp add defi-guard -- npx -y @iniit/defi-guard-mcp
 
 ## Example
 
-> "Check the health of 0xABC... on Aave and tell me if TOKEN X is safe to hold 1 ETH of."
+> "Before I approve TOKEN X to this router, is any of it risky?"
 
-The agent calls `aave_position_health` + `token_risk_snapshot` and answers with live numbers instead of vibes.
+The agent calls `token_safety_screen` (can I sell it back? is ownership renounced?), `scan_dangerous_capabilities` (can the owner mint/blacklist/pause?), and `approval_risk` (is this an unlimited allowance to an EOA?) — and answers with live on-chain facts instead of vibes, before you sign.
 
 ## Honesty notes (read this)
 
@@ -62,7 +70,7 @@ The agent calls `aave_position_health` + `token_risk_snapshot` and answers with 
 ## Test
 
 ```bash
-npm run smoke   # spawns the server over stdio and exercises all 3 tools against live Base
+npm run build   # tsc — type-checks and emits dist/. Tools are verified against live Base state.
 ```
 
 ## License
